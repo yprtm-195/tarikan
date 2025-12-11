@@ -4,6 +4,7 @@ import json
 import time
 import random
 import os
+from datetime import datetime # Tambahkan import ini
 
 # --- KONSTANTA ---
 # URL Apps Script untuk mengambil konfigurasi input
@@ -106,89 +107,50 @@ def make_api_request(store_info, current_token, keyword, static_headers):
 
     try:
         response = requests.get(API_URL, headers=headers, params=params, timeout=10)
-        response.raise_for_status() # Akan raise HTTPError untuk status kode 4xx/5xx
+        response.raise_for_status() 
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error saat mengambil data dari API untuk {store_info['store_code']} ({keyword}): {e}")
+        # Tambahkan logging untuk melihat respons mentah dari server jika ada error
+        if e.response is not None:
+            print(f"DEBUG: Status Code: {e.response.status_code}")
+            print(f"DEBUG: Response Body: {e.response.text}")
         return None
 
-def process_and_filter_products(api_response, filter_product_names, store_code):
+def process_products_for_historical_record(api_response, filter_product_names, store_info):
     """
-    Memproses respons API dan memfilter produk berdasarkan nama.
+    Memproses respons API dan memfilter produk berdasarkan nama,
+    lalu menambahkan metadata toko dan tanggal.
     """
-    filtered_products_data = []
+    historical_records = []
+    current_date = datetime.now().strftime('%Y-%m-%d') # Format tanggal YYYY-MM-DD
+    
     if api_response and 'products' in api_response:
         for product in api_response['products']:
             if product.get('productName') in filter_product_names:
-                filtered_products_data.append({
-                    'store_code': store_code, 
-                    'productName': product.get('productName'),
-                    'stock': product.get('stock')
+                historical_records.append({
+                    'Tanggal': current_date,
+                    'Kode toko': store_info.get('store_code'),
+                    'Nama Toko': store_info.get('store_name'),
+                    'Cabang': store_info.get('fc_code'),
+                    'Nama Produk': product.get('productName'),
+                    'Stok': product.get('stock')
                 })
-    return filtered_products_data
+    return historical_records
 
-def pivot_scraped_data(scraped_data, stores_data, filter_product_names):
+def send_results_to_apps_script(url, data_to_send):
     """
-    Mengubah data dari format panjang ke format lebar (pivot).
+    Mengirim hasil scraping ke Apps Script URL untuk ditulis ke Google Sheet.
     """
-    print("Memulai proses pivot data...")
-    # Header produk diurutkan agar konsisten
-    product_headers = sorted(list(filter_product_names))
-    final_headers = ['Kode toko', 'Nama Toko', 'Cabang'] + product_headers
-
-    # Buat lookup untuk metadata toko agar lebih cepat
-    store_metadata_map = {store['store_code']: store for store in stores_data}
-
-    # Dictionary untuk menampung data yang sudah dipivot
-    pivoted_data = {}
-
-    # Iterasi melalui data hasil scraping
-    for item in scraped_data:
-        store_code = item['store_code']
-        product_name = item['productName']
-        stock = item['stock']
-
-        # Inisialisasi baris toko jika belum ada
-        if store_code not in pivoted_data:
-            metadata = store_metadata_map.get(store_code, {})
-            pivoted_data[store_code] = {
-                'Kode toko': store_code,
-                'Nama Toko': metadata.get('store_name', 'N/A'),
-                'Cabang': metadata.get('fc_code', 'N/A')
-            }
-            # Inisialisasi stok semua produk untuk toko ini dengan nilai default (misal: 0)
-            for p_header in product_headers:
-                pivoted_data[store_code][p_header] = 0
-
-        # Set nilai stok untuk produk yang spesifik
-        if product_name in pivoted_data[store_code]:
-            pivoted_data[store_code][product_name] = stock
-
-    # Konversi dictionary ke list of lists (baris untuk Google Sheet)
-    # Urutkan berdasarkan store_code
-    final_rows = [final_headers]
-    for store_code in sorted(pivoted_data.keys()):
-        row_dict = pivoted_data[store_code]
-        # Pastikan urutan kolom sesuai dengan header
-        row_list = [row_dict.get(header, 0) for header in final_headers]
-        final_rows.append(row_list)
-        
-    print("Proses pivot data selesai.")
-    return final_rows
-
-def send_results_to_apps_script(url, pivoted_data):
-    """
-    Mengirim hasil scraping yang sudah dipivot ke Apps Script URL.
-    """
-    if not pivoted_data or len(pivoted_data) <= 1: # Cek jika hanya ada header
+    if not data_to_send:
         print("Tidak ada data untuk dikirim ke Apps Script.")
         return
 
-    print(f"Mengirim {len(pivoted_data) - 1} baris data ke Apps Script URL: {url}")
+    print(f"Mengirim {len(data_to_send)} baris data ke Apps Script URL: {url}")
     try:
-        # Kirim seluruh data (termasuk header) dalam satu payload
-        payload = {'data': pivoted_data}
-        response = requests.post(url, json=payload, timeout=60)
+        # Kirim seluruh data (sekarang sudah tidak dipivot, jadi list of dicts)
+        payload = {'data': data_to_send}
+        response = requests.post(url, json=payload, timeout=60, headers={'User-Agent': 'Mozilla/5.0'})
         response.raise_for_status()
         print("Data berhasil dikirim ke Apps Script.")
         print(f"Respons Apps Script: {response.text}")
@@ -206,8 +168,9 @@ def main():
         return
 
     stores_data = config.get("stores", [])
-    tokens_data = config.get("tokens", [])
+    tokens_data = [str(token) for token in config.get("tokens", [])]
     filter_product_names = set(config.get("products", []))
+    print(f"DEBUG: {len(filter_product_names)} nama produk filter berhasil dimuat.")
 
     if not stores_data:
         print("Tidak ada data toko yang ditemukan di konfigurasi. Keluar.")
@@ -224,9 +187,17 @@ def main():
     
     # 2. Proses Scraping dengan Batching dan Delay
     print(f"Memulai scraping untuk {len(stores_data)} toko...")
-    for i in range(0, len(stores_data), 5):
-        batch_stores = stores_data[i:i+5]
-        print(f"\n--- Memproses batch toko: {i+1} sampai {min(i+5, len(stores_data))} ---")
+    
+    # --- DEBUGGING: Batasi hanya 5 toko pertama ---
+    # stores_to_process = stores_data[:5] # uncomment this line to process only first 5 stores
+    # print(f"DEBUG: Memproses {len(stores_to_process)} toko pertama untuk uji coba.")
+    # -----------------------------------------------
+
+    stores_to_process = stores_data # Proses semua toko secara default
+
+    for i in range(0, len(stores_to_process), 5):
+        batch_stores = stores_to_process[i:i+5]
+        print(f"\n--- Memproses batch toko: {i+1} sampai {min(i+5, len(stores_to_process))} ---")
 
         for store_info in batch_stores:
             current_token = tokens_data[token_index % len(tokens_data)]
@@ -235,23 +206,23 @@ def main():
             for keyword in KEYWORDS:
                 api_response = make_api_request(store_info, current_token, keyword, STATIC_HEADERS)
                 if api_response:
-                    filtered_products = process_and_filter_products(api_response, filter_product_names, store_info['store_code'])
-                    all_scraped_data_long.extend(filtered_products)
+                    # Menggunakan fungsi baru untuk historical record
+                    historical_records = process_products_for_historical_record(api_response, filter_product_names, store_info)
+                    all_scraped_data_long.extend(historical_records)
             
             delay_intra_batch = random.uniform(1, 3)
             print(f"Jeda antar toko ({store_info['store_code']}): {delay_intra_batch:.2f} detik.")
             time.sleep(delay_intra_batch)
         
-        if i + 5 < len(stores_data):
+        if i + 5 < len(stores_to_process):
             delay_inter_batch = random.uniform(1, 3)
             print(f"Jeda antar batch: {delay_inter_batch:.2f} detik.")
             time.sleep(delay_inter_batch)
 
-    # 3. Lakukan pivot data
+    # 3. Kirim hasil yang sudah dalam format panjang ke Apps Script
+    print(f"\nDEBUG: Total record siap dikirim: {len(all_scraped_data_long)}")
     if all_scraped_data_long:
-        pivoted_final_data = pivot_scraped_data(all_scraped_data_long, stores_data, filter_product_names)
-        # 4. Kirim hasil yang sudah dipivot ke Apps Script
-        send_results_to_apps_script(APPS_SCRIPT_OUTPUT_URL, pivoted_final_data)
+        send_results_to_apps_script(APPS_SCRIPT_OUTPUT_URL, all_scraped_data_long)
     else:
         print("Tidak ada data yang berhasil diambil atau difilter untuk disimpan.")
 
@@ -259,4 +230,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
