@@ -3,7 +3,7 @@ name: Alfagift Scraper
 on:
   schedule:
     # Runs daily at 00:00 UTC (e.g., 07:00 AM Jakarta time)
-    - cron: '0 0 * * *'
+    - cron: '0 23 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
