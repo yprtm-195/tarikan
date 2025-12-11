@@ -1,0 +1,28 @@
+name: Alfagift Scraper
+
+on:
+  schedule:
+    # Runs daily at 00:00 UTC (e.g., 07:00 AM Jakarta time)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # Specify your desired Python version
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Run scraper script
+      run: python main.py
+      env:
+        APPS_SCRIPT_OUTPUT_URL: ${{ secrets.APPS_SCRIPT_OUTPUT_URL }}
