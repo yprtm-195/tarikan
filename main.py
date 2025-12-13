@@ -11,6 +11,11 @@ APPS_SCRIPT_CONFIG_URL = "https://script.google.com/macros/s/AKfycbwu0GTeV9Qtdip
 APPS_SCRIPT_OUTPUT_URL = os.environ.get("APPS_SCRIPT_OUTPUT_URL", "https://script.google.com/macros/s/AKfycbwu0GTeV9Qtdip_TtI-gYh-vR0bcquQSG3Mo0tVhyt8EWWkd3rEisv9xO9BNOfGeTAO/exec")
 KEYWORDS = ["cimory", "kanzler"]
 API_URL = "https://webcommerce-gw.alfagift.id/v2/products/searches"
+
+# Konfigurasi Retry
+MAX_RETRIES = 3
+RETRY_DELAY = 5 # detik
+
 STATIC_HEADERS = {
     'accept': 'application/json', 'accept-language': 'id', 'devicemodel': 'chrome',
     'devicetype': 'Web', 'fingerprint': 'XZ83Mtc0WRlnPTpgVdH6wfTzBg8ifrSx6CmR0RKLDtkAw9IuhDVATi7qPjylV6IG',
@@ -33,6 +38,9 @@ def fetch_config_from_apps_script(url):
         return config
     except requests.exceptions.RequestException as e:
         print(f"Error saat mengambil konfigurasi dari Apps Script: {e}")
+        if e.response is not None:
+            print(f"DEBUG: Status Code: {e.response.status_code}")
+            print(f"DEBUG: Response Body: {e.response.text}")
         return None
 
 def encode_base64_json(data_dict):
@@ -41,9 +49,9 @@ def encode_base64_json(data_dict):
     return encoded_bytes.decode('utf-8')
 
 def make_api_request(store_info, current_token, keyword, static_headers):
-    print(f"Mengambil data {keyword} untuk toko: {store_info['store_code']}")
+    store_code = store_info['store_code']
     storecode_payload = {
-        "store_code": store_info['store_code'], "delivery": True, "depo_id": "", "sapa": True,
+        "store_code": store_code, "delivery": True, "depo_id": "", "sapa": True,
         "store_method": 1, "distance": 0, "maxDistance": None, "flagRoute": store_info['flagroute']
     }
     fccode_payload = {"seller_id": "1", "fc_code": store_info['fc_code']}
@@ -52,16 +60,24 @@ def make_api_request(store_info, current_token, keyword, static_headers):
     headers['fccode'] = encode_base64_json(fccode_payload)
     headers['token'] = current_token
     params = {'keyword': keyword, 'start': 0, 'limit': 60}
-    try:
-        response = requests.get(API_URL, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error saat mengambil data dari API untuk {store_info['store_code']} ({keyword}): {e}")
-        if e.response is not None:
-            print(f"DEBUG: Status Code: {e.response.status_code}")
-            print(f"DEBUG: Response Body: {e.response.text}")
-        return None
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.get(API_URL, headers=headers, params=params, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error saat mengambil data dari API untuk {store_code} ({keyword}) - Percobaan {attempt + 1}/{MAX_RETRIES}: {e}")
+            if e.response is not None:
+                print(f"DEBUG: Status Code: {e.response.status_code}")
+                print(f"DEBUG: Response Body: {e.response.text}")
+            
+            if attempt < MAX_RETRIES - 1:
+                print(f"Mencoba lagi dalam {RETRY_DELAY} detik...")
+                time.sleep(RETRY_DELAY)
+            else:
+                print(f"Semua {MAX_RETRIES} percobaan gagal untuk {store_code} ({keyword}). Melewatkan toko ini.")
+                return None
 
 def process_products_for_historical_record(api_response, filter_product_names, store_info):
     historical_records = []
