@@ -39,6 +39,9 @@ function doGet(e) {
 
 function doPost(e) {
   const SPREADSHEET_ID = "10HlR0rRseB1TasNfKmMqkqq7A51D50Pci6eFVF63F74";
+  const SHEET_NAME_HISTORICAL = "Riwayat Stok";
+  const SHEET_NAME_PIVOT = "Stok Terkini";
+
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const payload = JSON.parse(e.postData.contents);
@@ -46,35 +49,29 @@ function doPost(e) {
     const data = payload.data;
 
     if (!outputType || !data || !Array.isArray(data) || data.length === 0) {
-      throw new Error("Payload tidak valid. Harus ada 'type' dan 'data' (array tidak kosong).");
+      throw new Error("Payload tidak valid.");
     }
 
     if (outputType === 'pivot') {
-      const SHEET_NAME_PIVOT = "Stok Terkini";
       let pivotSheet = ss.getSheetByName(SHEET_NAME_PIVOT);
-      if (!pivotSheet) {
-        pivotSheet = ss.insertSheet(SHEET_NAME_PIVOT);
-      }
+      if (!pivotSheet) pivotSheet = ss.insertSheet(SHEET_NAME_PIVOT);
       pivotSheet.clear();
       pivotSheet.getRange(1, 1, data.length, data[0].length).setValues(data);
-      return ContentService.createTextOutput(JSON.stringify({status: "success", message: `Sheet '${SHEET_NAME_PIVOT}' berhasil ditimpa dengan ${data.length - 1} baris data pivot.`})).setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({status: "success", message: `Sheet '${SHEET_NAME_PIVOT}' berhasil ditimpa.`})).setMimeType(ContentService.MimeType.JSON);
     
     } else if (outputType === 'historical') {
-      const SHEET_NAME_HISTORICAL = "Riwayat Stok";
       let historicalSheet = ss.getSheetByName(SHEET_NAME_HISTORICAL);
-      if (!historicalSheet) {
-        historicalSheet = ss.insertSheet(SHEET_NAME_HISTORICAL);
-      }
+      if (!historicalSheet) historicalSheet = ss.insertSheet(SHEET_NAME_HISTORICAL);
       const headers = Object.keys(data[0]);
       const values = data.map(obj => headers.map(header => obj[header]));
       const lastRow = historicalSheet.getLastRow();
       if (lastRow === 0) {
         const dataWithHeader = [headers].concat(values);
         historicalSheet.getRange(1, 1, dataWithHeader.length, dataWithHeader[0].length).setValues(dataWithHeader);
-        return ContentService.createTextOutput(JSON.stringify({status: "success", message: `Sheet '${SHEET_NAME_HISTORICAL}' kosong. Header + ${values.length} baris data berhasil ditulis.`})).setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify({status: "success", message: `Header + ${values.length} baris ditulis ke '${SHEET_NAME_HISTORICAL}'.`})).setMimeType(ContentService.MimeType.JSON);
       } else {
         historicalSheet.getRange(lastRow + 1, 1, values.length, values[0].length).setValues(values);
-        return ContentService.createTextOutput(JSON.stringify({status: "success", message: `${values.length} baris data berhasil ditambahkan ke '${SHEET_NAME_HISTORICAL}'.`})).setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify({status: "success", message: `${values.length} baris ditambahkan ke '${SHEET_NAME_HISTORICAL}'.`})).setMimeType(ContentService.MimeType.JSON);
       }
     } else {
       throw new Error(`Tipe output '${outputType}' tidak dikenali.`);
@@ -84,5 +81,53 @@ function doPost(e) {
     const errorOutput = { status: "error", message: err.message, stack: err.stack };
     return ContentService.createTextOutput(JSON.stringify(errorOutput))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// --- FUNGSI BARU UNTUK ARSIP ---
+function archiveSheet() {
+  const SPREADSHEET_ID = "10HlR0rRseB1TasNfKmMqkqq7A51D50Pci6eFVF63F74";
+  const SHEET_NAME_SOURCE = "Riwayat Stok";
+  
+  try {
+    const sourceSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sourceSheet = sourceSpreadsheet.getSheetByName(SHEET_NAME_SOURCE);
+
+    if (!sourceSheet) {
+      console.log(`Sheet sumber '${SHEET_NAME_SOURCE}' tidak ditemukan. Proses arsip dibatalkan.`);
+      return;
+    }
+    
+    const lastRow = sourceSheet.getLastRow();
+    // Hanya jalankan jika ada data selain header
+    if (lastRow <= 1) {
+      console.log(`Tidak ada data untuk diarsip di '${SHEET_NAME_SOURCE}'.`);
+      return;
+    }
+    
+    const dataRange = sourceSheet.getDataRange();
+    const dataToArchive = dataRange.getValues();
+    
+    // Buat nama file arsip baru
+    const now = new Date();
+    const formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM");
+    const archiveSpreadsheetName = `Arsip Stok - ${formattedDate}`;
+    
+    // Buat spreadsheet baru
+    const newSpreadsheet = SpreadsheetApp.create(archiveSpreadsheetName);
+    const newSheet = newSpreadsheet.getSheets()[0];
+    newSheet.setName(SHEET_NAME_SOURCE); // Samakan nama sheet-nya
+    
+    // Salin data ke spreadsheet arsip
+    newSheet.getRange(1, 1, dataToArchive.length, dataToArchive[0].length).setValues(dataToArchive);
+    console.log(`Berhasil membuat arsip di spreadsheet baru: '${archiveSpreadsheetName}' dengan ${dataToArchive.length} baris.`);
+    
+    // Kosongkan sheet sumber (sisakan header)
+    sourceSheet.getRange(2, 1, lastRow - 1, sourceSheet.getLastColumn()).clearContent();
+    console.log(`Berhasil mengosongkan data di sheet '${SHEET_NAME_SOURCE}'.`);
+    
+  } catch(err) {
+    console.error(`Proses arsip gagal: ${err.toString()}`);
+    // Kirim notifikasi error jika perlu
   }
 }
