@@ -188,12 +188,7 @@ def main():
     # 2. Proses Scraping dengan Batching dan Delay
     print(f"Memulai scraping untuk {len(stores_data)} toko...")
     
-    # --- DEBUGGING: Batasi hanya 10 toko pertama ---
-    stores_to_process = stores_data[:10] 
-    print(f"DEBUG: Memproses {len(stores_to_process)} toko pertama untuk uji coba.")
-    # -----------------------------------------------
-
-    # stores_to_process = stores_data # Proses semua toko secara default
+    stores_to_process = stores_data # Proses semua toko secara default
 
     for i in range(0, len(stores_to_process), 5):
         batch_stores = stores_to_process[i:i+5]
