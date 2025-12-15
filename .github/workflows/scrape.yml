@@ -2,22 +2,24 @@ name: Alfagift Scraper
 
 on:
   schedule:
-    # Runs daily at 00:00 UTC (e.g., 07:00 AM Jakarta time)
-    - cron: '0 23 * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+    - cron: '0 23 * * *' # Runs daily at 6 AM WIB
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9' # Specify your desired Python version
+        python-version: '3.9'
 
     - name: Install dependencies
       run: pip install -r requirements.txt
