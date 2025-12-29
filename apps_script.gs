@@ -1,3 +1,34 @@
+/**
+ * Fungsi ini akan otomatis jalan setiap kali spreadsheet dibuka
+ * dan membuat menu custom 'Admin'.
+ */
+function onOpen(e) {
+  SpreadsheetApp.getUi()
+      .createMenu('Admin')
+      .addItem('1. Authorize Script', 'authorizeScript')
+      .addItem('2. Run Archive Manually', 'archiveSheet')
+      .addToUi();
+}
+
+/**
+ * Fungsi ini hanya untuk memicu proses otorisasi.
+ * Dengan memanggil service DriveApp dan SpreadsheetApp,
+ * Google akan otomatis meminta izin yang dibutuhkan.
+ */
+function authorizeScript() {
+  try {
+    DriveApp.getFolders();
+    SpreadsheetApp.getActiveSpreadsheet();
+    SpreadsheetApp.getUi().alert('Otorisasi Berhasil', 'Skrip sekarang punya izin yang dibutuhkan.', SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('Otorisasi Gagal', e.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+// ================================================================
+// KODE LAMA DI BAWAH INI (JANGAN DIUBAH)
+// ================================================================
+
 function doGet(e) {
   const SPREADSHEET_ID = "10HlR0rRseB1TasNfKmMqkqq7A51D50Pci6eFVF63F74";
   try {
