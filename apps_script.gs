@@ -1,34 +1,3 @@
-/**
- * Fungsi ini akan otomatis jalan setiap kali spreadsheet dibuka
- * dan membuat menu custom 'Admin'.
- */
-function onOpen(e) {
-  SpreadsheetApp.getUi()
-      .createMenu('Admin')
-      .addItem('1. Authorize Script', 'authorizeScript')
-      .addItem('2. Run Archive Manually', 'archiveSheet')
-      .addToUi();
-}
-
-/**
- * Fungsi ini hanya untuk memicu proses otorisasi.
- * Dengan memanggil service DriveApp dan SpreadsheetApp,
- * Google akan otomatis meminta izin yang dibutuhkan.
- */
-function authorizeScript() {
-  try {
-    DriveApp.getFolders();
-    SpreadsheetApp.getActiveSpreadsheet();
-    SpreadsheetApp.getUi().alert('Otorisasi Berhasil', 'Skrip sekarang punya izin yang dibutuhkan.', SpreadsheetApp.getUi().ButtonSet.OK);
-  } catch (e) {
-    SpreadsheetApp.getUi().alert('Otorisasi Gagal', e.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
-// ================================================================
-// KODE LAMA DI BAWAH INI (JANGAN DIUBAH)
-// ================================================================
-
 function doGet(e) {
   const SPREADSHEET_ID = "10HlR0rRseB1TasNfKmMqkqq7A51D50Pci6eFVF63F74";
   try {
@@ -115,10 +84,10 @@ function doPost(e) {
   }
 }
 
+// --- FUNGSI ARSIP (VERSI SIMPLE, TANPA MANIPULASI FOLDER DRIVE) ---
 function archiveSheet() {
   const SPREADSHEET_ID = "10HlR0rRseB1TasNfKmMqkqq7A51D50Pci6eFVF63F74";
   const SHEET_NAME_SOURCE = "Riwayat Stok";
-  const ARCHIVE_FOLDER_NAME = "Arsip Stok Alfagift";
   
   try {
     const sourceSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -130,7 +99,7 @@ function archiveSheet() {
     }
     
     const lastRow = sourceSheet.getLastRow();
-    if (lastRow <= 1) {
+    if (lastRow <= 1) { // Hanya jalankan jika ada data selain header
       console.log(`Tidak ada data untuk diarsip di '${SHEET_NAME_SOURCE}'.`);
       return;
     }
@@ -138,29 +107,21 @@ function archiveSheet() {
     const dataRange = sourceSheet.getDataRange();
     const dataToArchive = dataRange.getValues();
     
-    let archiveFolder;
-    const folders = DriveApp.getFoldersByName(ARCHIVE_FOLDER_NAME);
-    if (folders.hasNext()) {
-      archiveFolder = folders.next();
-    } else {
-      archiveFolder = DriveApp.createFolder(ARCHIVE_FOLDER_NAME);
-    }
-    
+    // Buat nama file arsip baru
     const now = new Date();
     const formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd");
     const archiveSpreadsheetName = `Arsip Stok - ${formattedDate}`;
     
+    // Buat spreadsheet baru di root Drive
     const newSpreadsheet = SpreadsheetApp.create(archiveSpreadsheetName);
     const newSheet = newSpreadsheet.getSheets()[0];
     newSheet.setName(SHEET_NAME_SOURCE);
     
+    // Salin data ke spreadsheet arsip
     newSheet.getRange(1, 1, dataToArchive.length, dataToArchive[0].length).setValues(dataToArchive);
-    console.log(`Berhasil membuat arsip: '${archiveSpreadsheetName}'.`);
+    console.log(`Berhasil membuat arsip di spreadsheet baru: '${archiveSpreadsheetName}'. File dibuat di root Google Drive.`);
     
-    const newFile = DriveApp.getFileById(newSpreadsheet.getId());
-    newFile.moveTo(archiveFolder);
-    console.log(`File '${archiveSpreadsheetName}' berhasil dipindahkan ke folder '${ARCHIVE_FOLDER_NAME}'.`);
-    
+    // Kosongkan sheet sumber (sisakan header)
     sourceSheet.getRange(2, 1, lastRow - 1, sourceSheet.getLastColumn()).clearContent();
     console.log(`Berhasil mengosongkan data di sheet '${SHEET_NAME_SOURCE}'.`);
     
