@@ -117,31 +117,41 @@ def get_raw_products_for_pivot(api_response, filter_product_names, store_code):
     return raw_products
 
 def pivot_scraped_data(scraped_data, stores_data, filter_product_names):
-    print("Memulai proses pivot data...")
+    print("Memulai proses pivot data (v2 - with Lat/Lon)...")
     product_headers = sorted(list(filter_product_names))
-    final_headers = ['Kode toko', 'Nama Toko', 'Cabang'] + product_headers
+    # Tambahkan latitude dan longitude ke header
+    final_headers = ['Kode toko', 'Nama Toko', 'Cabang', 'latitude', 'longitude'] + product_headers
+    
     store_metadata_map = {store['store_code']: store for store in stores_data}
     pivoted_data = {}
+    
     for item in scraped_data:
         store_code = item['store_code']
         product_name = item['productName']
         stock = item['stock']
+        
         if store_code not in pivoted_data:
             metadata = store_metadata_map.get(store_code, {})
             pivoted_data[store_code] = {
                 'Kode toko': store_code,
                 'Nama Toko': metadata.get('store_name', 'N/A'),
-                'Cabang': metadata.get('fc_code', 'N/A')
+                'Cabang': metadata.get('fc_code', 'N/A'),
+                'latitude': metadata.get('latitude', None),
+                'longitude': metadata.get('longitude', None)
             }
+            # Inisialisasi semua kolom produk dengan 0
             for p_header in product_headers:
                 pivoted_data[store_code][p_header] = 0
+        
         if product_name in pivoted_data[store_code]:
             pivoted_data[store_code][product_name] = stock
+            
     final_rows = [final_headers]
     for store_code in sorted(pivoted_data.keys()):
         row_dict = pivoted_data[store_code]
         row_list = [row_dict.get(header, 0) for header in final_headers]
         final_rows.append(row_list)
+        
     print("Proses pivot data selesai.")
     return final_rows
 
